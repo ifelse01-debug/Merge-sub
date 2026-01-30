@@ -1,0 +1,16 @@
+{
+  "groups": [
+    {
+      "name": "Default",
+      "path": "",
+      "subscriptions": [],
+      "nodes": "vless://769a1411-8df8-4dcb-8df1-9cd18c32e4f1@spring.io:443?encryption=none&security=tls&sni=altr-cc-argo.94sub.ggff.net&fp=chrome&insecure=0&allowInsecure=0&type=ws&host=altr-cc-argo.94sub.ggff.net&path=%2Fvless-argo%3Fed%3D2560#DE_Vultr"
+    },
+    {
+      "name": "test",
+      "path": "test",
+      "subscriptions": [],
+      "nodes": ""
+    }
+  ]
+}

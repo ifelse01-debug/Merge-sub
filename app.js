@@ -17,8 +17,7 @@ const SUB_TOKEN = process.env.SUB_TOKEN || generateRandomString();
 
 let CFIP = process.env.CFIP || "time.is";
 let CFPORT = process.env.CFPORT || "443";
-let subscriptions = [];
-let nodes = '';
+let groups = [];
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
@@ -35,8 +34,14 @@ async function ensureDataDir() {
 
 // 初始化数据
 const initialData = {
-    subscriptions: [],
-    nodes: ''
+    groups: [
+        {
+            name: "Default",
+            path: "",
+            subscriptions: [],
+            nodes: ""
+        }
+    ]
 };
 
 // 初始化凭证变量
@@ -235,14 +240,26 @@ async function initializeDataFile() {
         }
 
         const parsedData = JSON.parse(data);
-        subscriptions = parsedData.subscriptions || [];
-        nodes = parsedData.nodes || '';
-        console.log('Data loaded into memory:', { subscriptions, nodes });
+        
+        // 迁移旧数据
+        if (!parsedData.groups) {
+            console.log('Migrating old data format to groups...');
+            groups = [{
+                name: "Default",
+                path: "",
+                subscriptions: parsedData.subscriptions || [],
+                nodes: parsedData.nodes || ''
+            }];
+            await saveData(groups);
+        } else {
+            groups = parsedData.groups;
+        }
+        
+        console.log('Data loaded into memory');
     } catch (error) {
         console.error('Error during initialization:', error);
         // 如果出错，使用初始数据
-        subscriptions = initialData.subscriptions;
-        nodes = initialData.nodes;
+        groups = initialData.groups;
     }
 }
 
@@ -252,35 +269,105 @@ async function loadData() {
         const data = await fs.readFile(DATA_FILE, 'utf8');
         const parsedData = JSON.parse(data);
         
-        subscriptions = Array.isArray(parsedData.subscriptions) 
-            ? parsedData.subscriptions 
-            : [];
-            
-        nodes = typeof parsedData.nodes === 'string' 
-            ? parsedData.nodes 
-            : '';
+        if (parsedData.groups) {
+            groups = parsedData.groups;
+        } else {
+            groups = [{
+                name: "Default",
+                path: "",
+                subscriptions: Array.isArray(parsedData.subscriptions) ? parsedData.subscriptions : [],
+                nodes: typeof parsedData.nodes === 'string' ? parsedData.nodes : ''
+            }];
+        }
 
-        console.log('Data loaded successfully:', { subscriptions, nodes });
+        console.log('Data loaded successfully');
     } catch (error) {
         console.error('Error loading data:', error);
         // 如果出错，初始化为空数据
-        subscriptions = [];
-        nodes = '';
+        groups = initialData.groups;
     }
 }
+
+// 获取数据
+app.get('/admin/data', async (req, res) => {
+    try {
+        res.status(200).json({ groups });
+    } catch (error) {
+        console.error('Error fetching data:', error);
+        res.status(500).json({ error: 'Failed to fetch data' });
+    }
+});
+
+// 添加分组
+app.post('/admin/add-group', async (req, res) => {
+    try {
+        const { name, path } = req.body;
+        if (!name) return res.status(400).json({ error: 'Group name is required' });
+        
+        const existingGroup = groups.find(g => g.name === name);
+        if (existingGroup) return res.status(400).json({ error: 'Group name already exists' });
+
+        const newGroup = {
+            name,
+            path: path !== undefined ? path : name.toLowerCase().replace(/\s+/g, '-'),
+            subscriptions: [],
+            nodes: ''
+        };
+        
+        // Check path uniqueness
+        if (groups.some(g => g.path === newGroup.path)) {
+             return res.status(400).json({ error: 'Group path already exists' });
+        }
+
+        groups.push(newGroup);
+        await saveData(groups);
+        res.status(200).json({ message: 'Group added successfully', group: newGroup });
+    } catch (error) {
+         console.error('Error adding group:', error);
+         res.status(500).json({ error: 'Failed to add group' });
+    }
+});
+
+// 删除分组
+app.post('/admin/delete-group', async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ error: 'Group name is required' });
+        
+        const index = groups.findIndex(g => g.name === name);
+        if (index === -1) return res.status(404).json({ error: 'Group not found' });
+        
+        groups.splice(index, 1);
+        if (groups.length === 0) {
+             groups.push({ name: "Default", path: "", subscriptions: [], nodes: "" });
+        }
+        
+        await saveData(groups);
+        res.status(200).json({ message: 'Group deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting group:', error);
+        res.status(500).json({ error: 'Failed to delete group' });
+    }
+});
 
 // 添加订阅路由
 app.post('/admin/add-subscription', async (req, res) => {
     try {
-        const newSubscriptionInput = req.body.subscription?.trim();
-        console.log('Attempting to add subscription(s):', newSubscriptionInput);
+        const { subscription, groupName } = req.body;
+        const newSubscriptionInput = subscription?.trim();
+        console.log('Attempting to add subscription(s) to group:', groupName);
 
         if (!newSubscriptionInput) {
             return res.status(400).json({ error: 'Subscription URL is required' });
         }
 
-        if (!Array.isArray(subscriptions)) {
-            subscriptions = [];
+        const group = groups.find(g => g.name === groupName) || groups[0];
+        if (!group) {
+            return res.status(404).json({ error: 'Group not found' });
+        }
+
+        if (!Array.isArray(group.subscriptions)) {
+            group.subscriptions = [];
         }
 
         // 分割多行输入
@@ -293,17 +380,17 @@ app.post('/admin/add-subscription', async (req, res) => {
         const existingSubs = [];
 
         for (const sub of newSubscriptions) {
-            if (subscriptions.some(existingSub => existingSub.trim() === sub)) {
+            if (group.subscriptions.some(existingSub => existingSub.trim() === sub)) {
                 existingSubs.push(sub);
             } else {
                 addedSubs.push(sub);
-                subscriptions.push(sub);
+                group.subscriptions.push(sub);
             }
         }
 
         if (addedSubs.length > 0) {
-            await saveData(subscriptions, nodes);
-            console.log('Subscriptions added successfully. Current subscriptions:', subscriptions);
+            await saveData(groups);
+            console.log('Subscriptions added successfully.');
             
             const message = addedSubs.length === newSubscriptions.length 
                 ? '订阅添加成功' 
@@ -354,15 +441,21 @@ function tryDecodeBase64(str) {
 // 添加节点路由
 app.post('/admin/add-node', async (req, res) => {
     try {
-        const newNode = req.body.node?.trim();
-        console.log('Attempting to add node:', newNode);
+        const { node, groupName } = req.body;
+        const newNode = node?.trim();
+        console.log('Attempting to add node to group:', groupName);
 
         if (!newNode) {
             return res.status(400).json({ error: 'Node is required' });
         }
 
-        let nodesList = typeof nodes === 'string' 
-            ? nodes.split('\n').map(n => n.trim()).filter(n => n)
+        const group = groups.find(g => g.name === groupName) || groups[0];
+        if (!group) {
+            return res.status(404).json({ error: 'Group not found' });
+        }
+
+        let nodesList = typeof group.nodes === 'string' 
+            ? group.nodes.split('\n').map(n => n.trim()).filter(n => n)
             : [];
 
         const newNodes = newNode.split('\n')
@@ -384,8 +477,8 @@ app.post('/admin/add-node', async (req, res) => {
         }
 
         if (addedNodes.length > 0) {
-            nodes = nodesList.join('\n');
-            await saveData(subscriptions, nodes);
+            group.nodes = nodesList.join('\n');
+            await saveData(groups);
             console.log('Node(s) added successfully');
             
             const message = addedNodes.length === newNodes.length 
@@ -414,15 +507,21 @@ function cleanNodeString(str) {
 // 删除订阅路由
 app.post('/admin/delete-subscription', async (req, res) => {
     try {
-        const subsToDelete = req.body.subscription?.trim();
-        console.log('Attempting to delete subscription(s):', subsToDelete);
+        const { subscription, groupName } = req.body;
+        const subsToDelete = subscription?.trim();
+        console.log('Attempting to delete subscription(s) from group:', groupName);
 
         if (!subsToDelete) {
             return res.status(400).json({ error: 'Subscription URL is required' });
         }
 
-        if (!Array.isArray(subscriptions)) {
-            subscriptions = [];
+        const group = groups.find(g => g.name === groupName) || groups[0];
+        if (!group) {
+            return res.status(404).json({ error: 'Group not found' });
+        }
+
+        if (!Array.isArray(group.subscriptions)) {
+            group.subscriptions = [];
             return res.status(404).json({ error: 'No subscriptions found' });
         }
 
@@ -437,20 +536,20 @@ app.post('/admin/delete-subscription', async (req, res) => {
 
         // 处理每个要删除的订阅
         deleteList.forEach(subToDelete => {
-            const index = subscriptions.findIndex(sub => 
+            const index = group.subscriptions.findIndex(sub => 
                 sub.trim() === subToDelete.trim()
             );
             if (index !== -1) {
                 deletedSubs.push(subToDelete);
-                subscriptions.splice(index, 1);
+                group.subscriptions.splice(index, 1);
             } else {
                 notFoundSubs.push(subToDelete);
             }
         });
         
         if (deletedSubs.length > 0) {
-            await saveData(subscriptions, nodes);
-            console.log('Subscriptions deleted. Remaining subscriptions:', subscriptions);
+            await saveData(groups);
+            console.log('Subscriptions deleted.');
             
             const message = deletedSubs.length === deleteList.length 
                 ? '订阅删除成功' 
@@ -469,11 +568,17 @@ app.post('/admin/delete-subscription', async (req, res) => {
 // 删除节点路由
 app.post('/admin/delete-node', async (req, res) => {
     try {
-        const nodesToDelete = req.body.node?.trim();
-        console.log('Attempting to delete node(s):', nodesToDelete);
+        const { node, groupName } = req.body;
+        const nodesToDelete = node?.trim();
+        console.log('Attempting to delete node(s) from group:', groupName);
 
         if (!nodesToDelete) {
             return res.status(400).json({ error: 'Node is required' });
+        }
+
+        const group = groups.find(g => g.name === groupName) || groups[0];
+        if (!group) {
+            return res.status(404).json({ error: 'Group not found' });
         }
 
         // 分割多行输入并清理每个节点字符串
@@ -482,7 +587,7 @@ app.post('/admin/delete-node', async (req, res) => {
             .filter(node => node); // 过滤空行
 
         // 获取当前节点列表并清理
-        let nodesList = nodes.split('\n')
+        let nodesList = (group.nodes || '').split('\n')
             .map(node => cleanNodeString(node))
             .filter(node => node);
 
@@ -507,9 +612,9 @@ app.post('/admin/delete-node', async (req, res) => {
 
         if (deletedNodes.length > 0) {
             // 更新节点列表
-            nodes = nodesList.join('\n');
-            await saveData(subscriptions, nodes);
-            console.log('Nodes deleted. Remaining nodes:', nodes);
+            group.nodes = nodesList.join('\n');
+            await saveData(groups);
+            console.log('Nodes deleted.');
             
             const message = deletedNodes.length === deleteList.length 
                 ? '节点删除成功' 
@@ -764,46 +869,73 @@ app.get('/admin/data', async (req, res) => {
 });
 
 // 保存数据
-async function saveData(subs, nds) {
+async function saveData(newGroups) {
     try {
         const data = {
-            subscriptions: Array.isArray(subs) ? subs : [],
-            nodes: typeof nds === 'string' ? nds : ''
+            groups: newGroups
         };
         
         await fs.writeFile(DATA_FILE, JSON.stringify(data, null, 2));
-        console.log('Data saved successfully:', data);
+        console.log('Data saved successfully');
         
-        subscriptions = data.subscriptions;
-        nodes = data.nodes;
+        groups = newGroups;
     } catch (error) {
         console.error('Error saving data:', error);
         throw error;
     }
 }
-// 订阅路由
+// 订阅路由 - 默认分组
 app.get(`/${SUB_TOKEN}`, async (req, res) => {
     try {
-        const queryCFIP = req.query.CFIP;
-        const queryCFPORT = req.query.CFPORT;
-
-        if (queryCFIP && queryCFPORT) {
-            CFIP = queryCFIP;
-            CFPORT = queryCFPORT;
-            console.log(`CFIP and CFPORT updated to ${CFIP}:${CFPORT}`);
-        }
-
-        // 从文件重新读取最新数据
-        await loadData();
-        const mergedSubscription = await generateMergedSubscription();
-        const base64Content = Buffer.from(mergedSubscription).toString('base64');
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.send(`${base64Content}`);
+        await handleSubscriptionRequest(req, res, '');
     } catch (error) {
         console.error(`Error handling /${SUB_TOKEN} route: ${error}`);
         res.status(500).send('Internal Server Error');
     }
 });
+
+// 订阅路由 - 指定分组
+app.get(`/${SUB_TOKEN}/:groupPath`, async (req, res) => {
+    try {
+        const groupPath = req.params.groupPath;
+        await handleSubscriptionRequest(req, res, groupPath);
+    } catch (error) {
+        console.error(`Error handling /${SUB_TOKEN}/${req.params.groupPath} route: ${error}`);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+async function handleSubscriptionRequest(req, res, groupPath) {
+    const queryCFIP = req.query.CFIP;
+    const queryCFPORT = req.query.CFPORT;
+
+    if (queryCFIP && queryCFPORT) {
+        CFIP = queryCFIP;
+        CFPORT = queryCFPORT;
+        console.log(`CFIP and CFPORT updated to ${CFIP}:${CFPORT}`);
+    }
+
+    // 从文件重新读取最新数据
+    await loadData();
+    
+    // Find group
+    let group;
+    if (groupPath === '') {
+        // Try to find group with empty path, or fallback to first group
+        group = groups.find(g => g.path === '') || groups[0];
+    } else {
+        group = groups.find(g => g.path === groupPath);
+    }
+    
+    if (!group) {
+        return res.status(404).send('Group not found');
+    }
+
+    const mergedSubscription = await generateMergedSubscription(group);
+    const base64Content = Buffer.from(mergedSubscription).toString('base64');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send(`${base64Content}`);
+}
 
 // 首页
 app.get('/', function(req, res) {
@@ -811,9 +943,9 @@ app.get('/', function(req, res) {
 });
 
 // 生成合并订阅
-async function generateMergedSubscription() {
+async function generateMergedSubscription(group) {
     try {
-        const promises = subscriptions.map(async (subscription) => {
+        const promises = (group.subscriptions || []).map(async (subscription) => {
             try {
                 const subscriptionContent = await fetchSubscriptionContent(subscription);
                 if (subscriptionContent) {
@@ -830,7 +962,7 @@ async function generateMergedSubscription() {
         const mergedContentArray = await Promise.all(promises);
         const mergedContent = mergedContentArray.filter(content => content !== null).join('\n');
 
-        const updatedNodes = replaceAddressAndPort(nodes);
+        const updatedNodes = replaceAddressAndPort(group.nodes || '');
         return `${mergedContent}\n${updatedNodes}`;
     } catch (error) {
         console.error(`Error generating merged subscription: ${error}`);

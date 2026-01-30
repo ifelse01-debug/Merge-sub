@@ -1,54 +1,96 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Merge Subscriptions-最好用的订阅管理系统</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <title>Merge Subscriptions - 最好用的订阅管理系统</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="/index.css" rel="stylesheet">
 </head>
+
 <body>
     <div class="container">
-        <div class="top-right">
-            <button id="theme-toggle" title="切换主题" style="margin-top: -1px;">
-              <span id="theme-icon">
-                <i class="fa-regular fa-moon"></i>
-              </span>
-            </button>
-            <a href="/change-password.html" class="change-password-btn">修改密码</a>
-            <a href="https://github.com/eooce/Merge-sub" target="_blank">
-                <i class="fab fa-github"></i>GitHub
-            </a>
-        </div>
-        <h1>Merge Subscriptions</h1>
-
-        <div class="row">
-            <div class="column">
-                <div class="section input-section">
-                    <h2 style="color: #0b9275">Add Subscriptions or Nodes</h2>
-                    <textarea id="addInput" placeholder="Enter subscription URL(s) or node(s),support base64"></textarea>
-                    <button class="add-btn" onclick="addItem()">Add</button>
-                </div>
-                <div class="section input-section">
-                    <h2 style="color: #c92d3c">Delete Subscriptions or Nodes</h2>
-                    <textarea id="deleteInput" placeholder="Enter subscription URL(s) or node(s) to delete"></textarea>
-                    <button class="delete-btn" onclick="deleteItem()">Delete</button>
-                </div>
-            </div>
-            <div class="column">
-                <div class="section">
-                    <h2 style="color: #0b9275">Current Subscriptions and Nodes</h2>
-                    <pre id="data"></pre>
-                    <button class="view-sub-btn" onclick="showSubscriptionInfo()">
-                        查看订阅链接
+        <header class="app-header">
+            <div class="header-content">
+                <h1 class="app-title">
+                    <i class="fa-solid fa-layer-group"></i> Merge <span class="highlight">Subscriptions</span>
+                </h1>
+                <div class="top-controls">
+                    <button id="theme-toggle" class="icon-btn" title="切换主题">
+                        <span id="theme-icon">
+                            <i class="fa-regular fa-moon"></i>
+                        </span>
                     </button>
+                    <a href="/change-password.html" class="nav-link">
+                        <i class="fa-solid fa-key"></i> 修改密码
+                    </a>
+                    <a href="https://github.com/eooce/Merge-sub" target="_blank" class="nav-link github-link">
+                        <i class="fab fa-github"></i> GitHub
+                    </a>
+                </div>
+            </div>
+
+            <div class="group-controls">
+                <div class="select-wrapper">
+                    <label for="groupSelect"><i class="fa-solid fa-folder-tree"></i> Group:</label>
+                    <select id="groupSelect" onchange="handleGroupChange()"></select>
+                </div>
+                <div class="group-actions">
+                    <button onclick="addGroup()" class="btn-primary btn-sm"><i class="fa-solid fa-plus"></i> New
+                        Group</button>
+                    <button onclick="deleteGroup()" class="btn-danger btn-sm"><i class="fa-solid fa-trash"></i>
+                        Delete Group</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="row">
+                <div class="column">
+                    <div class="section input-section card">
+                        <h2 class="section-title add-title"><i class="fa-solid fa-circle-plus"></i> Add
+                            Subscriptions or Nodes</h2>
+                        <textarea id="addInput"
+                            placeholder="Enter subscription URL(s) or node(s), support base64..."></textarea>
+                        <button class="btn-primary full-width" onclick="addItem()">
+                            <i class="fa-solid fa-plus"></i> Add to Group
+                        </button>
+                    </div>
+                    <div class="section input-section card">
+                        <h2 class="section-title delete-title"><i class="fa-solid fa-circle-minus"></i> Delete
+                            Subscriptions or Nodes</h2>
+                        <textarea id="deleteInput"
+                            placeholder="Enter subscription URL(s) or node(s) to delete..."></textarea>
+                        <button class="btn-danger full-width" onclick="deleteItem()">
+                            <i class="fa-solid fa-trash-can"></i> Delete from Group
+                        </button>
+                    </div>
+                </div>
+                <div class="column">
+                    <div class="section card data-section">
+                        <div class="section-header">
+                            <h2 class="section-title list-title"><i class="fa-solid fa-list-check"></i> Current
+                                Group Data</h2>
+                            <button class="btn-success view-sub-btn" onclick="showSubscriptionInfo()">
+                                <i class="fa-solid fa-link"></i> Get Links
+                            </button>
+                        </div>
+                        <pre id="data" class="data-display"></pre>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="footer">
-            <a href="https://github.com/eooce/Merge-sub" target="_blank">Merge Subscriptions|Powered by eooce</a>
-        </div>
+
+        <footer class="footer">
+            <p>Merge Subscriptions <span class="separator">|</span> Powered by <a href="https://github.com/eooce"
+                    target="_blank">eooce</a></p>
+        </footer>
     </div>
     <script type="text/javascript" src="script.js"></script>
 </body>
+
 </html>
